@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Video Merger Tool</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    h2 { margin-top: 30px; }
+    input[type="file"] { margin-bottom: 10px; }
+    button { padding: 10px 20px; background: #3498db; color: white; border: none; cursor: pointer; }
+    button:hover { background: #2980b9; }
+    #status { margin-top: 20px; font-weight: bold; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Merge One Video with Multiple Others</h1>
+
+  <h2>Section 1: Upload Main Video</h2>
+  <input type="file" id="mainVideo" accept="video/*"><br>
+
+  <h2>Section 2: Upload Multiple Videos</h2>
+  <input type="file" id="otherVideos" accept="video/*" multiple><br>
+
+  <button onclick="mergeVideos()">Merge Videos</button>
+
+  <div id="status"></div>
+
+  <!-- Load FFmpeg -->
+  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.6/dist/ffmpeg.min.js"></script>
+  <script>
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    const ffmpeg = createFFmpeg({ log: true });
+    let mainVideoFile = null;
+    let otherVideoFiles = [];
+
+    document.getElementById("mainVideo").addEventListener("change", (e) => {
+      mainVideoFile = e.target.files[0];
+    });
+
+    document.getElementById("otherVideos").addEventListener("change", (e) => {
+      otherVideoFiles = Array.from(e.target.files);
+    });
+
+    async function mergeVideos() {
+      const status = document.getElementById("status");
+      if (!mainVideoFile || otherVideoFiles.length === 0) {
+        alert("Please upload videos in both sections.");
+        return;
+      }
+
+      status.textContent = "Loading FFmpeg (may take a few seconds)...";
+      await ffmpeg.load();
+
+      // Write main video to FS
+      ffmpeg.FS('writeFile', 'main.mp4', await fetchFile(mainVideoFile));
+
+      let outputLinks = "";
+      for (let i = 0; i < otherVideoFiles.length; i++) {
+        const otherFile = otherVideoFiles[i];
+        const otherFileName = `other${i}.mp4`;
+        const outputFileName = `merged${i}.mp4`;
+
+        status.textContent = `Merging main video with: ${otherFile.name} (${i + 1}/${otherVideoFiles.length})`;
+
+        // Write the other video to FS
+        ffmpeg.FS('writeFile', otherFileName, await fetchFile(otherFile));
+
+        // Merge using concat filter
+        await ffmpeg.run(
+          '-i', 'main.mp4',
+          '-i', otherFileName,
+          '-filter_complex', '[0:v:0][0:a:0][1:v:0][1:a:0]concat=n=2:v=1:a=1[outv][outa]',
+          '-map', '[outv]', '-map', '[outa]',
+          outputFileName
+        );
+
+        const data = ffmpeg.FS('readFile', outputFileName);
+        const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+        outputLinks += `✔️ <a href="${url}" download="${outputFileName}">${outputFileName}</a>\n`;
+      }
+
+      status.innerHTML = "✅ Merging complete! Download your files below:\n" + outputLinks;
+    }
+  </script>
+</body>
+</html>
